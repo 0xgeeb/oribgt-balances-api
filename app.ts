@@ -40,7 +40,7 @@ const sleep = async (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const holders: Record<string, number> = {}
+let holders: Record<string, number> = {}
 let processing: boolean = false
 
 const steerIsland = '0xDB78B4166580917c9604f8DdfBea5F49B493845c'
@@ -105,8 +105,9 @@ app.get("/oribgt-balances/:block", async (req: Request, res: Response): Promise<
   processing = true
   try {
     const block = parseFloat(req.params.block)
-    const holders = await getBalances(block)
-    const filteredHolders = Object.fromEntries(Object.entries(holders).filter(([_, balance]) => balance > 0))
+    holders = {}
+    const result = await getBalances(block)
+    const filteredHolders = Object.fromEntries(Object.entries(result).filter(([_, balance]) => balance > 0))
     res.json({ holders: filteredHolders })
   }
   catch (e) {
