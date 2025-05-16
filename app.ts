@@ -97,7 +97,7 @@ const getBalances = async (toBlock: number) => {
   return holders
 }
 
-app.get("/oribgt-balances/:block", async (req: Request, res: Response): Promise<void> => {
+app.get("/steerlp-balances/:block", async (req: Request, res: Response): Promise<void> => {
   if(processing) {
     res.status(429).json({ error: "already processing request" })
     return
