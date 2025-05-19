@@ -43,7 +43,7 @@ const sleep = async (ms: number): Promise<void> => {
 
 const steerIsland = '0xDB78B4166580917c9604f8DdfBea5F49B493845c'
 const beradrome = '0x5f36C4E43e591da0C7F761B09274AB460c391bA1'
-const bgtVault = ''
+const bgtVault = '0xeEE277a91F9F50cda5d188522C921820a848cD99'
 const goldivault = '0x66090e34c9192Ee9927f44f978246be3e5365D36'
 const yt = '0xB345a602c2e24051a57e2339a98c815a6e45059c'
 const steerDeployBlock = 4053186
