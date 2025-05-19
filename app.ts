@@ -3,6 +3,7 @@ import express, { Request, Response } from "express"
 import {
   createPublicClient,
   http,
+  parseAbi,
   parseAbiItem,
   formatEther,
   type Chain
@@ -40,16 +41,98 @@ const sleep = async (ms: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-let holders: Record<string, number> = {}
-let processing: boolean = false
-
 const steerIsland = '0xDB78B4166580917c9604f8DdfBea5F49B493845c'
 const beradrome = '0x5f36C4E43e591da0C7F761B09274AB460c391bA1'
-const deployBlock = 4053186
+const goldivault = '0x66090e34c9192Ee9927f44f978246be3e5365D36'
+const yt = '0xB345a602c2e24051a57e2339a98c815a6e45059c'
+const steerDeployBlock = 4053186
+const ytDeployBlock = 3845931
 const step = 10000
 
-const getBalances = async (toBlock: number) => {
-  for(let from = deployBlock; from <= toBlock; from += step) {
+let steerHolders: Record<string, number> = {}
+let steerProcessing: boolean = false
+let ytHolders: Record<string, number> = {}
+let ytProcessing: boolean = false
+
+const getYtBalances = async (toBlock: number) => {
+  for(let from = ytDeployBlock; from <= toBlock; from += step) {
+    const to = Math.min(from + step - 1, toBlock)
+    const logs = await client.getLogs({
+      address: yt,
+      event: parseAbiItem('event Transfer(address indexed from, address indexed to, uint256)'),
+      fromBlock: BigInt(from),
+      toBlock: BigInt(to)
+    })
+    console.log(`checked blocks ${from} to ${to} and found ${logs.length} logs`)
+
+    for (const log of logs) {
+      const fromAddress = (log.args?.[0] as string)?.toLowerCase()
+      const toAddress = (log.args?.[1] as string)?.toLowerCase()
+      const amountBigInt = log.args?.[2] as bigint
+      const amount = parseFloat(formatEther(amountBigInt as unknown as bigint))
+  
+      if (amount == 0) continue
+      if(fromAddress === goldivault.toLowerCase() || toAddress === goldivault.toLowerCase()) {
+        continue
+      }
+  
+      if (fromAddress !== '0x0000000000000000000000000000000000000000') {
+        if(ytHolders[fromAddress] == undefined) {
+          // console.log('shouldnt be happening lol', from , to, fromAddress, toAddress)
+          ytHolders[fromAddress] = 0 - amount
+        }
+        else {
+          const curr = ytHolders[fromAddress]
+          ytHolders[fromAddress] = curr - amount
+        }
+      }
+      if (toAddress !== '0x0000000000000000000000000000000000000000') {
+        if(ytHolders[toAddress] == undefined) {
+          ytHolders[toAddress] = amount
+        }
+        else {
+          const curr = ytHolders[toAddress]
+          ytHolders[toAddress] = curr + amount
+        }
+      }
+    }
+
+    await sleep(5)
+  }
+
+  for(let from = ytDeployBlock; from <= toBlock; from += step) {
+    const to = Math.min(from + step - 1, toBlock)
+    const logs = await client.getLogs({
+      address: goldivault,
+      event: parseAbiItem('event YTBuy(address indexed from, uint256, uint256)'),
+      fromBlock: BigInt(from),
+      toBlock: BigInt(to)
+    })
+    console.log(`checked blocks ${from} to ${to} and found ${logs.length} logs`)
+
+    for (const log of logs) {
+      const user = (log.args?.[0] as string).toLowerCase()
+      const amountBigInt = log.args?.[1] as bigint
+      const amount = parseFloat(formatEther(amountBigInt as unknown as bigint))
+
+      if(ytHolders[user] == undefined) {
+        ytHolders[user] = amount
+      }
+      else {
+        const curr = ytHolders[user]
+        ytHolders[user] = curr + amount
+      }      
+    }
+
+    await sleep(5)
+  }
+  
+  console.log(ytHolders)
+  return ytHolders
+}
+
+const getSteerBalances = async (toBlock: number) => {
+  for(let from = steerDeployBlock; from <= toBlock; from += step) {
     const to = Math.min(from + step - 1, toBlock)
     const logs = await client.getLogs({
       address: steerIsland,
@@ -71,42 +154,62 @@ const getBalances = async (toBlock: number) => {
       }
   
       if (fromAddress !== '0x0000000000000000000000000000000000000000') {
-        if(holders[fromAddress] == undefined) {
+        if(steerHolders[fromAddress] == undefined) {
           console.log('shouldnt be happening lol', from , to)
         }
         else {
-          const curr = holders[fromAddress]
-          holders[fromAddress] = curr - amount
+          const curr = steerHolders[fromAddress]
+          steerHolders[fromAddress] = curr - amount
         }
       }
       if (toAddress !== '0x0000000000000000000000000000000000000000') {
-        if(holders[toAddress] == undefined) {
-          holders[toAddress] = amount
+        if(steerHolders[toAddress] == undefined) {
+          steerHolders[toAddress] = amount
         }
         else {
-          const curr = holders[toAddress]
-          holders[toAddress] = curr + amount
+          const curr = steerHolders[toAddress]
+          steerHolders[toAddress] = curr + amount
         }
       }
     }
 
     await sleep(5)
   }
+  const result = await client.readContract({
+    address: steerIsland,
+    abi: parseAbi(['function getTotalAmounts() external view returns (uint256 total0, uint256 total1)']),
+    functionName: 'getTotalAmounts',
+    args: [],
+    blockNumber: BigInt(toBlock)
+  })
+  const resultSupply = await client.readContract({
+    address: steerIsland,
+    abi: parseAbi(['function totalSupply() external view returns (uint256)']),
+    functionName: 'totalSupply',
+    args: [],
+    blockNumber: BigInt(toBlock)
+  })
+  const ratio = parseFloat(formatEther(result[0] as unknown as bigint)) / parseFloat(formatEther(resultSupply as unknown as bigint))
+  const realSteerHolders: Record<string, number> = {}
+  for (const [address, amount] of Object.entries(steerHolders)) {
+    realSteerHolders[address] = amount * ratio
+  }
   
-  console.log(holders)
-  return holders
+  console.log(steerHolders)
+  console.log(realSteerHolders)
+  return realSteerHolders
 }
 
-app.get("/steerlp-balances/:block", async (req: Request, res: Response): Promise<void> => {
-  if(processing) {
+app.get(`/${goldivault}/:block`, async (req: Request, res: Response): Promise<void> => {
+  if(ytProcessing) {
     res.status(429).json({ error: "already processing request" })
     return
   }
-  processing = true
+  ytProcessing = true
   try {
     const block = parseFloat(req.params.block)
-    holders = {}
-    const result = await getBalances(block)
+    ytHolders = {}
+    const result = await getYtBalances(block)
     const filteredHolders = Object.fromEntries(Object.entries(result).filter(([_, balance]) => balance > 0))
     res.json({ holders: filteredHolders })
   }
@@ -115,8 +218,70 @@ app.get("/steerlp-balances/:block", async (req: Request, res: Response): Promise
     res.status(500).json({ error: "failed retreiving balances" })
   }
   finally {
-    processing = false
+    ytProcessing = false
   }
+})
+
+app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<void> => {
+  if(steerProcessing) {
+    res.status(429).json({ error: "already processing request" })
+    return
+  }
+  steerProcessing = true
+  try {
+    const block = parseFloat(req.params.block)
+    steerHolders = {}
+    const result = await getSteerBalances(block)
+    const filteredHolders = Object.fromEntries(Object.entries(result).filter(([_, balance]) => balance > 0))
+    res.json({ holders: filteredHolders })
+  }
+  catch (e) {
+    console.log('whoops: ', e)
+    res.status(500).json({ error: "failed retreiving balances" })
+  }
+  finally {
+    steerProcessing = false
+  }
+})
+
+const wtf = async (toBlock: number) => {
+  // for(let from = ytDeployBlock; from <= toBlock; from += step) {
+  //   const to = Math.min(from + step - 1, toBlock)
+  //   const logs = await client.getLogs({
+  //     address: goldivault,
+  //     event: parseAbiItem('event YTBuy(address indexed from, uint256, uint256)'),
+  //     fromBlock: BigInt(from),
+  //     toBlock: BigInt(to)
+  //   })
+  //   console.log(`checked blocks ${from} to ${to} and found ${logs.length} logs`)
+
+  //   for (const log of logs) {
+  //     const user = (log.args?.[0] as string).toLowerCase()
+  //     const amountBigInt = log.args?.[1] as bigint
+  //     const amount = parseFloat(formatEther(amountBigInt as unknown as bigint))
+
+      // if(user === "0x6490077d2da557a239384b685437940adf77c7c4".toLowerCase()) {
+      //   console.log(log.blockNumber, amount)
+      // }
+
+      // if(ytHolders[user] == undefined) {
+      //   ytHolders[user] = amount
+      // }
+      // else {
+      //   const curr = ytHolders[user]
+      //   ytHolders[user] = curr + amount
+      // }      
+  //   }
+
+  //   await sleep(5)
+  // }
+  
+  // console.log(ytHolders)
+  // return ytHolders
+}
+
+app.get('/wtf', async () => {
+  wtf(5224034)
 })
 
 app.listen(port, () => console.log(`oribgt-balances-api running on http://localhost:${port}`))
