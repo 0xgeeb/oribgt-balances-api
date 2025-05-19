@@ -244,44 +244,4 @@ app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<v
   }
 })
 
-const wtf = async (toBlock: number) => {
-  // for(let from = ytDeployBlock; from <= toBlock; from += step) {
-  //   const to = Math.min(from + step - 1, toBlock)
-  //   const logs = await client.getLogs({
-  //     address: goldivault,
-  //     event: parseAbiItem('event YTBuy(address indexed from, uint256, uint256)'),
-  //     fromBlock: BigInt(from),
-  //     toBlock: BigInt(to)
-  //   })
-  //   console.log(`checked blocks ${from} to ${to} and found ${logs.length} logs`)
-
-  //   for (const log of logs) {
-  //     const user = (log.args?.[0] as string).toLowerCase()
-  //     const amountBigInt = log.args?.[1] as bigint
-  //     const amount = parseFloat(formatEther(amountBigInt as unknown as bigint))
-
-      // if(user === "0x6490077d2da557a239384b685437940adf77c7c4".toLowerCase()) {
-      //   console.log(log.blockNumber, amount)
-      // }
-
-      // if(ytHolders[user] == undefined) {
-      //   ytHolders[user] = amount
-      // }
-      // else {
-      //   const curr = ytHolders[user]
-      //   ytHolders[user] = curr + amount
-      // }      
-  //   }
-
-  //   await sleep(5)
-  // }
-  
-  // console.log(ytHolders)
-  // return ytHolders
-}
-
-app.get('/wtf', async () => {
-  wtf(5224034)
-})
-
 app.listen(port, () => console.log(`oribgt-balances-api running on http://localhost:${port}`))
