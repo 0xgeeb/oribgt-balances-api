@@ -43,6 +43,7 @@ const sleep = async (ms: number): Promise<void> => {
 
 const steerIsland = '0xDB78B4166580917c9604f8DdfBea5F49B493845c'
 const beradrome = '0x5f36C4E43e591da0C7F761B09274AB460c391bA1'
+const bgtVault = ''
 const goldivault = '0x66090e34c9192Ee9927f44f978246be3e5365D36'
 const yt = '0xB345a602c2e24051a57e2339a98c815a6e45059c'
 const steerDeployBlock = 4053186
@@ -152,6 +153,9 @@ const getSteerBalances = async (toBlock: number) => {
       if(fromAddress === beradrome.toLowerCase() || toAddress === beradrome.toLowerCase()) {
         continue
       }
+      if(fromAddress === bgtVault.toLowerCase() || toAddress === bgtVault.toLowerCase()) {
+        continue
+      }
   
       if (fromAddress !== '0x0000000000000000000000000000000000000000') {
         if(steerHolders[fromAddress] == undefined) {
@@ -201,6 +205,11 @@ const getSteerBalances = async (toBlock: number) => {
 }
 
 app.get(`/${goldivault}/:block`, async (req: Request, res: Response): Promise<void> => {
+  const currentBlock = await client.getBlockNumber()
+  if(parseFloat(req.params.block) > parseFloat(currentBlock.toString())) {
+    res.status(404).json({ error: "block not found" })
+    return
+  }
   if(ytProcessing) {
     res.status(429).json({ error: "already processing request" })
     return
@@ -223,6 +232,11 @@ app.get(`/${goldivault}/:block`, async (req: Request, res: Response): Promise<vo
 })
 
 app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<void> => {
+  const currentBlock = await client.getBlockNumber()
+  if(parseFloat(req.params.block) > parseFloat(currentBlock.toString())) {
+    res.status(404).json({ error: "block not found" })
+    return
+  }
   if(steerProcessing) {
     res.status(429).json({ error: "already processing request" })
     return
