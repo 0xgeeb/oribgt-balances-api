@@ -54,6 +54,7 @@ let steerHolders: Record<string, number> = {}
 let steerProcessing: boolean = false
 let ytHolders: Record<string, number> = {}
 let ytProcessing: boolean = false
+let infraredProcessing: boolean = false
 
 const getYtBalances = async (toBlock: number) => {
   for(let from = ytDeployBlock; from <= toBlock; from += step) {
@@ -224,7 +225,7 @@ app.get(`/${goldivault}/:block`, async (req: Request, res: Response): Promise<vo
   }
   catch (e) {
     console.log('whoops: ', e)
-    res.status(500).json({ error: "failed retreiving balances" })
+    res.status(500).json({ error: "failed retrieving balances" })
   }
   finally {
     ytProcessing = false
@@ -251,10 +252,46 @@ app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<v
   }
   catch (e) {
     console.log('whoops: ', e)
-    res.status(500).json({ error: "failed retreiving balances" })
+    res.status(500).json({ error: "failed retrieving balances" })
   }
   finally {
     steerProcessing = false
+  }
+})
+
+app.get('/infrared/:block', async (req: Request, res: Response): Promise<void> => {
+  const currentBlock = await client.getBlockNumber()
+  if(parseFloat(req.params.block) > parseFloat(currentBlock.toString())) {
+    res.status(404).json({ error: "block not found" })
+    return
+  }
+  if(infraredProcessing || steerProcessing || ytProcessing) {
+    res.status(429).json({ error: "already processing request" })
+    return
+  }
+  infraredProcessing = true
+  try {
+    const block = parseFloat(req.params.block)
+    steerHolders = {}
+    ytHolders = {}
+    const steerResult = await getSteerBalances(block)
+    const ytResult = await getYtBalances(block)
+    const combinedHolders: Record<string, number> = {}
+    for (const [address, balance] of Object.entries(steerResult)) {
+      combinedHolders[address] = balance
+    }
+    for (const [address, balance] of Object.entries(ytResult)) {
+      combinedHolders[address] = (combinedHolders[address] || 0) + balance
+    }
+    const filteredHolders = Object.fromEntries(Object.entries(combinedHolders).filter(([_, balance]) => balance > 0))
+    res.json({ holders: filteredHolders })
+  }
+  catch (e) {
+    console.log('whoops: ', e)
+    res.status(500).json({ error: "failed retrieving balances" })
+  }
+  finally {
+    infraredProcessing = false
   }
 })
 
