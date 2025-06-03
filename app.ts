@@ -225,7 +225,7 @@ app.get(`/${goldivault}/:block`, async (req: Request, res: Response): Promise<vo
   }
   catch (e) {
     console.log('whoops: ', e)
-    res.status(500).json({ error: "failed retrieving balances" })
+    res.status(500).json({ error: "failed retreiving balances" })
   }
   finally {
     ytProcessing = false
@@ -252,7 +252,7 @@ app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<v
   }
   catch (e) {
     console.log('whoops: ', e)
-    res.status(500).json({ error: "failed retrieving balances" })
+    res.status(500).json({ error: "failed retreiving balances" })
   }
   finally {
     steerProcessing = false
@@ -283,8 +283,14 @@ app.get('/infrared/:block', async (req: Request, res: Response): Promise<void> =
     for (const [address, balance] of Object.entries(ytResult)) {
       combinedHolders[address] = (combinedHolders[address] || 0) + balance
     }
-    const filteredHolders = Object.fromEntries(Object.entries(combinedHolders).filter(([_, balance]) => balance > 0))
-    res.json({ holders: filteredHolders })
+    const filteredHolders = Object.entries(combinedHolders)
+      .filter(([_, balance]) => balance > 0)
+      .map(([address, balance]: [string, number]) => ({
+        address,
+        balance: balance.toString()
+      }));
+    const timestamp = Math.floor(Date.now() / 1000).toString()
+    res.json({ data: filteredHolders, timestamp })
   }
   catch (e) {
     console.log('whoops: ', e)
