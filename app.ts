@@ -12,6 +12,7 @@ import {
 dotenv.config()
 const app = express()
 const port = process.env.API_PORT
+const rpc = process.env.RPC_URL ?? ''
 app.use(express.json())
 
 const BerachainMainnet = {
@@ -24,10 +25,10 @@ const BerachainMainnet = {
   },
   rpcUrls: {
     default: {
-      http: ["https://rpc.berachain.com/"],
+      http: [rpc],
     },
     public: {
-      http: ["https://rpc.berachain.com/"],
+      http: [rpc],
     }
   }
 } as const satisfies Chain
