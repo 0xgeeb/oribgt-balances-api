@@ -49,7 +49,7 @@ const goldivault = '0x66090e34c9192Ee9927f44f978246be3e5365D36'
 const yt = '0xB345a602c2e24051a57e2339a98c815a6e45059c'
 const steerDeployBlock = 4053186
 const ytDeployBlock = 3845931
-const step = 10000
+const step = 30000
 
 let steerHolders: Record<string, number> = {}
 let steerProcessing: boolean = false
