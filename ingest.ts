@@ -7,7 +7,7 @@ import {
   formatEther,
   type Chain
 } from "viem"
-import { DatabaseService, TokenBalance } from "./database"
+import { DatabaseService, TransferEvent } from "./database"
 
 dotenv.config()
 const rpc = process.env.RPC_URL ?? ''
@@ -48,14 +48,11 @@ const steerDeployBlock = 4053186
 const ytDeployBlock = 3845931
 const step = 30000
 
-async function ingestYtBalances(fromBlock: number, toBlock: number) {
-  console.log(`Ingesting YT balances from block ${fromBlock} to ${toBlock}`)
+async function ingestYtEvents(fromBlock: number, toBlock: number) {
+  console.log(`Ingesting YT events from block ${fromBlock} to ${toBlock}`)
   
   const db = new DatabaseService()
-  let ytHolders: Record<string, number> = {}
-
-  // First, get all events in the range to build up the balance state
-  const allEvents: Array<{block: number, from: string, to: string, amount: number, type: 'transfer' | 'ytbuy'}> = []
+  const allEvents: TransferEvent[] = []
 
   // Collect Transfer events
   for(let from = Math.max(fromBlock, ytDeployBlock); from <= toBlock; from += step) {
@@ -81,11 +78,12 @@ async function ingestYtBalances(fromBlock: number, toBlock: number) {
       }
   
       allEvents.push({
-        block: blockNumber,
         from: fromAddress,
         to: toAddress,
         amount: amount,
-        type: 'transfer'
+        block: blockNumber,
+        token: 'yt',
+        timestamp: Math.floor(Date.now() / 1000)
       })
     }
 
@@ -110,82 +108,35 @@ async function ingestYtBalances(fromBlock: number, toBlock: number) {
       const blockNumber = Number(log.blockNumber)
 
       allEvents.push({
-        block: blockNumber,
-        from: '',
+        from: '0x0000000000000000000000000000000000000000', // mint from zero address
         to: user,
         amount: amount,
-        type: 'ytbuy'
+        block: blockNumber,
+        token: 'yt',
+        timestamp: Math.floor(Date.now() / 1000)
       })
     }
 
     await sleep(5)
   }
 
-  // Sort events by block number
-  allEvents.sort((a, b) => a.block - b.block)
-
-  // Now iterate through every block and apply events
-  for (let currentBlock = fromBlock; currentBlock <= toBlock; currentBlock++) {
-    // Apply all events that happened at this block
-    const blockEvents = allEvents.filter(event => event.block === currentBlock)
-    
-    for (const event of blockEvents) {
-      if (event.type === 'transfer') {
-        if (event.from !== '0x0000000000000000000000000000000000000000') {
-          if(ytHolders[event.from] == undefined) {
-            ytHolders[event.from] = 0 - event.amount
-          }
-          else {
-            const curr = ytHolders[event.from]
-            ytHolders[event.from] = curr - event.amount
-          }
-        }
-        if (event.to !== '0x0000000000000000000000000000000000000000') {
-          if(ytHolders[event.to] == undefined) {
-            ytHolders[event.to] = event.amount
-          }
-          else {
-            const curr = ytHolders[event.to]
-            ytHolders[event.to] = curr + event.amount
-          }
-        }
-      } else if (event.type === 'ytbuy') {
-        if(ytHolders[event.to] == undefined) {
-          ytHolders[event.to] = event.amount
-        }
-        else {
-          const curr = ytHolders[event.to]
-          ytHolders[event.to] = curr + event.amount
-        }
-      }
-    }
-
-    // Save balances at this block (every block gets saved)
-    const balances: TokenBalance[] = Object.entries(ytHolders)
-      .map(([address, balance]) => ({
-        address,
-        balance,
-        block: currentBlock,
-        token: 'yt',
-        timestamp: Math.floor(Date.now() / 1000)
-      }))
-
-    // Save the balance state for this block (always)
-    console.log('saving entry for block #', currentBlock)
-    await db.saveTokenBalances(balances, currentBlock, 'yt')
+  // Save all events to database
+  if (allEvents.length > 0) {
+    await db.saveTransferEvents(allEvents)
+    console.log(`Saved ${allEvents.length} YT events to database`)
   }
 
   await db.close()
-  console.log(`Completed YT ingestion for blocks ${fromBlock} to ${toBlock}`)
+  console.log(`Completed YT event ingestion for blocks ${fromBlock} to ${toBlock}`)
 }
 
-async function ingestSteerBalances(fromBlock: number, toBlock: number) {
-  console.log(`Ingesting Steer balances from block ${fromBlock} to ${toBlock}`)
+async function ingestSteerEvents(fromBlock: number, toBlock: number) {
+  console.log(`Ingesting Steer events from block ${fromBlock} to ${toBlock}`)
   
   const db = new DatabaseService()
-  let steerHolders: Record<string, number> = {}
+  const allEvents: TransferEvent[] = []
 
-  // Process Transfer events
+  // Collect Transfer events
   for(let from = Math.max(fromBlock, steerDeployBlock); from <= toBlock; from += step) {
     const to = Math.min(from + step - 1, toBlock)
     const logs = await client.getLogs({
@@ -194,7 +145,7 @@ async function ingestSteerBalances(fromBlock: number, toBlock: number) {
       fromBlock: BigInt(from),
       toBlock: BigInt(to)
     })
-    console.log(`checked blocks ${from} to ${to} and found ${logs.length} logs`)
+    console.log(`checked blocks ${from} to ${to} and found ${logs.length} transfer logs`)
 
     for (const log of logs) {
       const fromAddress = (log.args?.[0] as string)?.toLowerCase()
@@ -211,85 +162,27 @@ async function ingestSteerBalances(fromBlock: number, toBlock: number) {
         continue
       }
   
-      if (fromAddress !== '0x0000000000000000000000000000000000000000') {
-        if(steerHolders[fromAddress] == undefined) {
-          console.log('shouldnt be happening lol', from , to)
-        }
-        else {
-          const curr = steerHolders[fromAddress]
-          steerHolders[fromAddress] = curr - amount
-        }
-      }
-      if (toAddress !== '0x0000000000000000000000000000000000000000') {
-        if(steerHolders[toAddress] == undefined) {
-          steerHolders[toAddress] = amount
-        }
-        else {
-          const curr = steerHolders[toAddress]
-          steerHolders[toAddress] = curr + amount
-        }
-      }
-
-      // Save balances at this block
-      const balances: TokenBalance[] = Object.entries(steerHolders)
-        .filter(([_, balance]) => balance > 0)
-        .map(([address, balance]) => ({
-          address,
-          balance,
-          block: blockNumber,
-          token: 'steer',
-          timestamp: Math.floor(Date.now() / 1000)
-        }))
-
-      if (balances.length > 0) {
-        await db.saveTokenBalances(balances)
-      }
+      allEvents.push({
+        from: fromAddress,
+        to: toAddress,
+        amount: amount,
+        block: blockNumber,
+        token: 'steer',
+        timestamp: Math.floor(Date.now() / 1000)
+      })
     }
 
     await sleep(5)
   }
 
-  // For Steer, we need to get the ratio at each block where we have data
-  // This is more complex, so we'll get the ratio at the toBlock and apply it to all blocks
-  const result = await client.readContract({
-    address: steerIsland,
-    abi: parseAbi(['function getTotalAmounts() external view returns (uint256 total0, uint256 total1)']),
-    functionName: 'getTotalAmounts',
-    args: [],
-    blockNumber: BigInt(toBlock)
-  })
-  const resultSupply = await client.readContract({
-    address: steerIsland,
-    abi: parseAbi(['function totalSupply() external view returns (uint256)']),
-    functionName: 'totalSupply',
-    args: [],
-    blockNumber: BigInt(toBlock)
-  })
-  const ratio = parseFloat(formatEther(result[0] as unknown as bigint)) / parseFloat(formatEther(resultSupply as unknown as bigint))
-  
-  // Update all Steer balances with the ratio
-  const realSteerHolders: Record<string, number> = {}
-  for (const [address, amount] of Object.entries(steerHolders)) {
-    realSteerHolders[address] = amount * ratio
-  }
-
-  // Save final Steer balances with ratio applied
-  const finalBalances: TokenBalance[] = Object.entries(realSteerHolders)
-    .filter(([_, balance]) => balance > 0)
-    .map(([address, balance]) => ({
-      address,
-      balance,
-      block: toBlock,
-      token: 'steer',
-      timestamp: Math.floor(Date.now() / 1000)
-    }))
-
-  if (finalBalances.length > 0) {
-    await db.saveTokenBalances(finalBalances)
+  // Save all events to database
+  if (allEvents.length > 0) {
+    await db.saveTransferEvents(allEvents)
+    console.log(`Saved ${allEvents.length} Steer events to database`)
   }
 
   await db.close()
-  console.log(`Completed Steer ingestion for blocks ${fromBlock} to ${toBlock}`)
+  console.log(`Completed Steer event ingestion for blocks ${fromBlock} to ${toBlock}`)
 }
 
 // Simple script - just change these values and run
@@ -297,12 +190,12 @@ const fromBlock = ytDeployBlock
 const toBlock = 7000000
 
 async function main() {
-  console.log(`Starting ingestion from block ${fromBlock} to ${toBlock}`)
+  console.log(`Starting event ingestion from block ${fromBlock} to ${toBlock}`)
   
   try {
-    await ingestYtBalances(fromBlock, toBlock)
-    // await ingestSteerBalances(fromBlock, toBlock)
-    console.log('Ingestion completed successfully')
+    await ingestYtEvents(fromBlock, toBlock)
+    // await ingestSteerEvents(fromBlock, toBlock)
+    console.log('Event ingestion completed successfully')
   } catch (error) {
     console.error('Ingestion failed:', error)
     process.exit(1)

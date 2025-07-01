@@ -24,6 +24,6 @@
 
 # curl -X GET "http://localhost:3001/0x66090e34c9192Ee9927f44f978246be3e5365D36/6907747" -w "\n"
 
-# curl -X GET "https://api.goldilocks.io/0x66090e34c9192Ee9927f44f978246be3e5365D36/6907747" -w "\n"
+curl -X GET "https://api.goldilocks.io/0x66090e34c9192Ee9927f44f978246be3e5365D36/6907747" -w "\n"
 
-curl -X GET "http://localhost:3001/0x66090e34c9192Ee9927f44f978246be3e5365D36/4001000" -w "\n"
+# curl -X GET "http://localhost:3001/0x66090e34c9192Ee9927f44f978246be3e5365D36/6907747" -w "\n"

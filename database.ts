@@ -1,15 +1,10 @@
 import { Pool, PoolClient } from 'pg'
 
-interface DatabaseRow {
-  address: string
-  balance: number
-  latest_block?: number
-  total_balance?: number
-}
-
-export interface TokenBalance {
-  address: string
-  balance: number
+export interface TransferEvent {
+  id?: number
+  from: string
+  to: string
+  amount: number
   block: number
   token: string
   timestamp: number
@@ -45,16 +40,16 @@ export class DatabaseService {
       const client = await this.pool.connect()
       console.log('Connected to database successfully')
       
-      // Create table if it doesn't exist
+      // Create table for transfer events
       const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS token_balances (
+        CREATE TABLE IF NOT EXISTS transfer_events (
           id SERIAL PRIMARY KEY,
-          address VARCHAR(42) NOT NULL,
-          balance DECIMAL(30,18) NOT NULL,
+          from_address VARCHAR(42) NOT NULL,
+          to_address VARCHAR(42) NOT NULL,
+          amount DECIMAL(30,18) NOT NULL,
           block BIGINT NOT NULL,
           token VARCHAR(10) NOT NULL,
-          timestamp BIGINT NOT NULL,
-          UNIQUE(address, block, token)
+          timestamp BIGINT NOT NULL
         )
       `
 
@@ -64,10 +59,11 @@ export class DatabaseService {
 
       // Create indexes for better performance
       const createIndexesSQL = [
-        'CREATE INDEX IF NOT EXISTS idx_token_block ON token_balances(token, block)',
-        'CREATE INDEX IF NOT EXISTS idx_address_token ON token_balances(address, token)',
-        'CREATE INDEX IF NOT EXISTS idx_block ON token_balances(block)',
-        'CREATE INDEX IF NOT EXISTS idx_token ON token_balances(token)'
+        'CREATE INDEX IF NOT EXISTS idx_token_block ON transfer_events(token, block)',
+        'CREATE INDEX IF NOT EXISTS idx_block ON transfer_events(block)',
+        'CREATE INDEX IF NOT EXISTS idx_token ON transfer_events(token)',
+        'CREATE INDEX IF NOT EXISTS idx_from_address ON transfer_events(from_address)',
+        'CREATE INDEX IF NOT EXISTS idx_to_address ON transfer_events(to_address)'
       ]
 
       console.log('Creating indexes...')
@@ -90,46 +86,36 @@ export class DatabaseService {
     }
   }
 
-  async saveTokenBalances(balances: TokenBalance[], block?: number, token?: string): Promise<void> {
+  async saveTransferEvents(events: TransferEvent[]): Promise<void> {
+    if (events.length === 0) return
+
     const client = await this.pool.connect()
     
     try {
       await client.query('BEGIN')
 
-      if (balances.length === 0) {
-        // Insert a dummy entry to mark this block as processed
-        const dummyQuery = `
-          INSERT INTO token_balances (address, balance, block, token, timestamp)
-          VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (address, block, token) DO NOTHING
-        `
-        await client.query(dummyQuery, ['empty_block', 0, block, token, Math.floor(Date.now() / 1000)])
-      } else {
-        // Use a more efficient batch insert
-        const values = balances.map((balance, index) => {
-          const offset = index * 5
-          return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`
-        }).join(', ')
+      // Use a more efficient batch insert
+      const values = events.map((event, index) => {
+        const offset = index * 6
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6})`
+      }).join(', ')
 
-        const flatValues = balances.flatMap(balance => [
-          balance.address,
-          balance.balance,
-          balance.block,
-          balance.token,
-          balance.timestamp
-        ])
+      const flatValues = events.flatMap(event => [
+        event.from,
+        event.to,
+        event.amount,
+        event.block,
+        event.token,
+        event.timestamp
+      ])
 
-        const query = `
-          INSERT INTO token_balances (address, balance, block, token, timestamp)
-          VALUES ${values}
-          ON CONFLICT (address, block, token) 
-          DO UPDATE SET 
-            balance = EXCLUDED.balance,
-            timestamp = EXCLUDED.timestamp
-        `
+      const query = `
+        INSERT INTO transfer_events (from_address, to_address, amount, block, token, timestamp)
+        VALUES ${values}
+        ON CONFLICT DO NOTHING
+      `
 
-        await client.query(query, flatValues)
-      }
+      await client.query(query, flatValues)
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -143,85 +129,111 @@ export class DatabaseService {
     const client = await this.pool.connect()
     
     try {
+      // Get all transfer events up to the specified block
       const query = `
-        SELECT address, balance::numeric as balance
-        FROM token_balances 
-        WHERE token = $1 AND block = $2 AND balance > 0
-        ORDER BY balance DESC
+        SELECT from_address, to_address, amount::numeric as amount
+        FROM transfer_events 
+        WHERE token = $1 AND block <= $2
+        ORDER BY block ASC
       `
 
       const result = await client.query(query, [token, block])
       
+      // Reconstruct balances from events
       const balances: Record<string, number> = {}
-      result.rows.forEach((row: any) => {
-        balances[row.address] = parseFloat(row.balance)
-      })
       
+      result.rows.forEach((row: any) => {
+        const fromAddress = row.from_address.toLowerCase()
+        const toAddress = row.to_address.toLowerCase()
+        const amount = parseFloat(row.amount)
+
+        // Handle from address (subtract amount)
+        if (fromAddress !== '0x0000000000000000000000000000000000000000') {
+          if (balances[fromAddress] === undefined) {
+            balances[fromAddress] = 0
+          }
+          balances[fromAddress] -= amount
+        }
+
+        // Handle to address (add amount)
+        if (toAddress !== '0x0000000000000000000000000000000000000000') {
+          if (balances[toAddress] === undefined) {
+            balances[toAddress] = 0
+          }
+          balances[toAddress] += amount
+        }
+      })
+
+      // Filter out zero and negative balances
+      // const positiveBalances: Record<string, number> = {}
+      // for (const [address, balance] of Object.entries(balances)) {
+      //   if (balance > 0) {
+      //     positiveBalances[address] = balance
+      //   }
+      // }
+      
+      // return positiveBalances
       return balances
     } finally {
       client.release()
     }
   }
 
-  async getLatestBlock(token: string): Promise<number | null> {
+
+  async getSteerBalancesWithRatio(block: number, ratio: number): Promise<Record<string, number>> {
     const client = await this.pool.connect()
     
     try {
+      // Get all transfer events up to the specified block
       const query = `
-        SELECT MAX(block) as latest_block 
-        FROM token_balances 
-        WHERE token = $1
+        SELECT from_address, to_address, amount::numeric as amount
+        FROM transfer_events 
+        WHERE token = 'steer' AND block <= $1
+        ORDER BY block ASC
       `
 
-      const result = await client.query(query, [token])
-      return result.rows[0]?.latest_block || null
-    } finally {
-      client.release()
-    }
-  }
-
-  async getCombinedBalances(tokens: string[], block: number): Promise<Array<{address: string, balance: string}>> {
-    const client = await this.pool.connect()
-    
-    try {
-      const query = `
-        SELECT address, SUM(balance::numeric) as total_balance
-        FROM token_balances 
-        WHERE token = ANY($1) AND block = $2 AND balance > 0
-        GROUP BY address
-        HAVING SUM(balance::numeric) > 0
-        ORDER BY total_balance DESC
-      `
-
-      const result = await client.query(query, [tokens, block])
+      const result = await client.query(query, [block])
       
-      return result.rows.map((row: any) => ({
-        address: row.address,
-        balance: row.total_balance.toString()
-      }))
+      // Reconstruct balances from events
+      const balances: Record<string, number> = {}
+      
+      result.rows.forEach((row: any) => {
+        const fromAddress = row.from_address.toLowerCase()
+        const toAddress = row.to_address.toLowerCase()
+        const amount = parseFloat(row.amount)
+
+        // Handle from address (subtract amount)
+        if (fromAddress !== '0x0000000000000000000000000000000000000000') {
+          if (balances[fromAddress] === undefined) {
+            balances[fromAddress] = 0
+          }
+          balances[fromAddress] -= amount
+        }
+
+        // Handle to address (add amount)
+        if (toAddress !== '0x0000000000000000000000000000000000000000') {
+          if (balances[toAddress] === undefined) {
+            balances[toAddress] = 0
+          }
+          balances[toAddress] += amount
+        }
+      })
+
+      // Apply ratio to get real balances
+      const realBalances: Record<string, number> = {}
+      for (const [address, balance] of Object.entries(balances)) {
+        if (balance > 0) {
+          realBalances[address] = balance * ratio
+        }
+      }
+      
+      return realBalances
     } finally {
       client.release()
     }
   }
 
 
-
-  async checkBlockExists(token: string, block: number): Promise<boolean> {
-    const client = await this.pool.connect()
-    
-    try {
-      const query = `
-        SELECT COUNT(*) as count
-        FROM token_balances 
-        WHERE token = $1 AND block = $2
-      `
-
-      const result = await client.query(query, [token, block])
-      return parseInt(result.rows[0].count) > 0
-    } finally {
-      client.release()
-    }
-  }
 
   async close(): Promise<void> {
     await this.pool.end()
