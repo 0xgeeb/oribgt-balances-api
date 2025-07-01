@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "npx tsx app.ts",
-    "build": "npx tsc"
+    "build": "npx tsc",
+    "ingest": "npx tsx ingest.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +18,8 @@
     "express": "^5.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3",
-    "viem": "^2.29.3"
+    "viem": "^2.29.3",
+    "pg": "^8.11.3",
+    "@types/pg": "^8.10.9"
   }
 }
