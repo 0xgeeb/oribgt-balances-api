@@ -185,16 +185,14 @@ async function ingestSteerEvents(fromBlock: number, toBlock: number) {
   console.log(`Completed Steer event ingestion for blocks ${fromBlock} to ${toBlock}`)
 }
 
-// Simple script - just change these values and run
-const fromBlock = ytDeployBlock
 const toBlock = 7000000
 
 async function main() {
-  console.log(`Starting event ingestion from block ${fromBlock} to ${toBlock}`)
+  console.log(`Starting event ingestion from block ${ytDeployBlock} to ${toBlock}`)
   
   try {
-    await ingestYtEvents(fromBlock, toBlock)
-    // await ingestSteerEvents(fromBlock, toBlock)
+    await ingestYtEvents(ytDeployBlock, toBlock)
+    await ingestSteerEvents(steerDeployBlock, toBlock)
     console.log('Event ingestion completed successfully')
   } catch (error) {
     console.error('Ingestion failed:', error)

@@ -50,7 +50,7 @@ app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<v
   try {
     const block = parseInt(req.params.block)
     
-    if (isNaN(block)) {
+    if (isNaN(block) || block < 4053186) {
       res.status(400).json({ error: "Invalid block number" })
       return
     }
