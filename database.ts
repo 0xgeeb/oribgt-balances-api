@@ -233,7 +233,27 @@ export class DatabaseService {
     }
   }
 
+  async getLatestBlock(token: string): Promise<number | null> {
+    const client = await this.pool.connect()
+    
+    try {
+      const query = `
+        SELECT MAX(block) as latest_block
+        FROM transfer_events 
+        WHERE token = $1
+      `
 
+      const result = await client.query(query, [token])
+      
+      if (result.rows.length === 0 || result.rows[0].latest_block === null) {
+        return null
+      }
+      
+      return parseInt(result.rows[0].latest_block)
+    } finally {
+      client.release()
+    }
+  }
 
   async close(): Promise<void> {
     await this.pool.end()
