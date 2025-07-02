@@ -4,27 +4,27 @@ echo "Setting up PostgreSQL on AWS EC2 server..."
 
 # Update system packages
 echo "Updating system packages..."
-sudo yum update -y
+sudo dnf update -y
 
 # Install PostgreSQL repository and PostgreSQL
 echo "Installing PostgreSQL..."
-sudo yum install -y postgresql postgresql-server postgresql-contrib
+sudo dnf install -y postgresql15 postgresql15-server postgresql15-contrib
 
 # Initialize PostgreSQL database
 echo "Initializing PostgreSQL database..."
-sudo postgresql-setup initdb
+sudo postgresql-15-setup initdb
 
 # Start and enable PostgreSQL service
 echo "Starting PostgreSQL service..."
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
+sudo systemctl start postgresql-15
+sudo systemctl enable postgresql-15
 
 # Check if PostgreSQL is running
-if sudo systemctl is-active --quiet postgresql; then
+if sudo systemctl is-active --quiet postgresql-15; then
     echo "PostgreSQL is running successfully!"
 else
     echo "Failed to start PostgreSQL. Checking status..."
-    sudo systemctl status postgresql
+    sudo systemctl status postgresql-15
     exit 1
 fi
 
@@ -37,25 +37,25 @@ sudo -u postgres psql -c "ALTER USER token_user CREATEDB;"
 
 # Configure PostgreSQL to allow connections from localhost
 echo "Configuring PostgreSQL for local connections..."
-sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" /var/lib/pgsql/data/postgresql.conf
-sudo sed -i "s/#port = 5432/port = 5432/" /var/lib/pgsql/data/postgresql.conf
+sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" /var/lib/pgsql/15/data/postgresql.conf
+sudo sed -i "s/#port = 5432/port = 5432/" /var/lib/pgsql/15/data/postgresql.conf
 
 # Update pg_hba.conf to allow local connections with password
 echo "Updating authentication configuration..."
-sudo sed -i 's/local   all             all                                     peer/local   all             all                                     md5/' /var/lib/pgsql/data/pg_hba.conf
-sudo sed -i 's/host    all             all             127.0.0.1\/32            ident/host    all             all             127.0.0.1\/32            md5/' /var/lib/pgsql/data/pg_hba.conf
-sudo sed -i 's/host    all             all             ::1\/128                 ident/host    all             all             ::1\/128                 md5/' /var/lib/pgsql/data/pg_hba.conf
+sudo sed -i 's/local   all             all                                     peer/local   all             all                                     md5/' /var/lib/pgsql/15/data/pg_hba.conf
+sudo sed -i 's/host    all             all             127.0.0.1\/32            ident/host    all             all             127.0.0.1\/32            md5/' /var/lib/pgsql/15/data/pg_hba.conf
+sudo sed -i 's/host    all             all             ::1\/128                 ident/host    all             all             ::1\/128                 md5/' /var/lib/pgsql/15/data/pg_hba.conf
 
 # Restart PostgreSQL to apply changes
 echo "Restarting PostgreSQL to apply configuration changes..."
-sudo systemctl restart postgresql
+sudo systemctl restart postgresql-15
 
 # Verify PostgreSQL is running
-if sudo systemctl is-active --quiet postgresql; then
+if sudo systemctl is-active --quiet postgresql-15; then
     echo "PostgreSQL setup completed successfully!"
 else
     echo "PostgreSQL failed to restart. Checking status..."
-    sudo systemctl status postgresql
+    sudo systemctl status postgresql-15
     exit 1
 fi
 
