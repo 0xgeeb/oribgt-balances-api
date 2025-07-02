@@ -46,13 +46,14 @@ const goldivault = '0x66090e34c9192Ee9927f44f978246be3e5365D36'
 const yt = '0xB345a602c2e24051a57e2339a98c815a6e45059c'
 const steerDeployBlock = 4053186
 const ytDeployBlock = 3845931
-const step = 30000
+const step = 10000 // Reduced from 30000 for faster processing
 
 class AutoUpdater {
   private db: DatabaseService
   private isRunning: boolean = false
-  private checkInterval: number = 60000 // Check every minute
-  private batchSize: number = 1000 // Process blocks in batches
+  private checkInterval: number = 60000 // Check every minute (20 blocks)
+  private batchSize: number = 10000 // Process blocks in smaller batches (was 1000) - ~10 minutes of data
+  private rpcDelay: number = 500 // RPC delay to 500ms (was 5000ms)
 
   constructor() {
     this.db = new DatabaseService()
@@ -65,7 +66,10 @@ class AutoUpdater {
     }
 
     this.isRunning = true
-    console.log('Starting auto updater...')
+    console.log('Starting auto updater for 3-second blocks...')
+    console.log(`Check interval: ${this.checkInterval}ms (${this.checkInterval/1000}s)`)
+    console.log(`Batch size: ${this.batchSize} blocks (${this.batchSize * 3}s of data)`)
+    console.log(`RPC delay: ${this.rpcDelay}ms`)
 
     while (this.isRunning) {
       try {
@@ -73,7 +77,8 @@ class AutoUpdater {
         await sleep(this.checkInterval)
       } catch (error) {
         console.error('Error in auto updater:', error)
-        await sleep(this.checkInterval)
+        // Shorter error recovery delay
+        await sleep(10000)
       }
     }
   }
@@ -95,18 +100,30 @@ class AutoUpdater {
     const ytStartBlock = ytLatest ? ytLatest + 1 : ytDeployBlock
     const steerStartBlock = steerLatest ? steerLatest + 1 : steerDeployBlock
 
-    // Process YT if there are new blocks
+    // Process all available YT blocks up to current block
     if (ytStartBlock <= currentBlockNumber) {
-      const ytEndBlock = Math.min(ytStartBlock + this.batchSize - 1, currentBlockNumber)
-      console.log(`Processing YT blocks ${ytStartBlock} to ${ytEndBlock}`)
-      await this.ingestYtEvents(ytStartBlock, ytEndBlock)
+      let ytCurrentBlock = ytStartBlock
+      while (ytCurrentBlock <= currentBlockNumber) {
+        const ytEndBlock = Math.min(ytCurrentBlock + this.batchSize - 1, currentBlockNumber)
+        const blocksToProcess = ytEndBlock - ytCurrentBlock + 1
+        const estimatedTime = (blocksToProcess * 3) / 60 // minutes
+        console.log(`Processing YT blocks ${ytCurrentBlock} to ${ytEndBlock} (${blocksToProcess} blocks, ~${estimatedTime.toFixed(1)}min of data)`)
+        await this.ingestYtEvents(ytCurrentBlock, ytEndBlock)
+        ytCurrentBlock = ytEndBlock + 1
+      }
     }
 
-    // Process Steer if there are new blocks
+    // Process all available Steer blocks up to current block
     if (steerStartBlock <= currentBlockNumber) {
-      const steerEndBlock = Math.min(steerStartBlock + this.batchSize - 1, currentBlockNumber)
-      console.log(`Processing Steer blocks ${steerStartBlock} to ${steerEndBlock}`)
-      await this.ingestSteerEvents(steerStartBlock, steerEndBlock)
+      let steerCurrentBlock = steerStartBlock
+      while (steerCurrentBlock <= currentBlockNumber) {
+        const steerEndBlock = Math.min(steerCurrentBlock + this.batchSize - 1, currentBlockNumber)
+        const blocksToProcess = steerEndBlock - steerCurrentBlock + 1
+        const estimatedTime = (blocksToProcess * 3) / 60 // minutes
+        console.log(`Processing Steer blocks ${steerCurrentBlock} to ${steerEndBlock} (${blocksToProcess} blocks, ~${estimatedTime.toFixed(1)}min of data)`)
+        await this.ingestSteerEvents(steerCurrentBlock, steerEndBlock)
+        steerCurrentBlock = steerEndBlock + 1
+      }
     }
 
     console.log(`Auto update check completed. Current block: ${currentBlockNumber}`)
@@ -147,7 +164,7 @@ class AutoUpdater {
         })
       }
 
-      await sleep(5)
+      await sleep(this.rpcDelay)
     }
 
     // Collect YTBuy events
@@ -176,7 +193,7 @@ class AutoUpdater {
         })
       }
 
-      await sleep(5)
+      await sleep(this.rpcDelay)
     }
 
     // Save all events to database
@@ -184,6 +201,10 @@ class AutoUpdater {
       await this.db.saveTransferEvents(allEvents)
       console.log(`Saved ${allEvents.length} YT events to database`)
     }
+
+    // Update the latest processed block
+    await this.db.updateLatestBlock('yt', toBlock)
+    console.log(`Updated YT latest processed block to ${toBlock}`)
   }
 
   private async ingestSteerEvents(fromBlock: number, toBlock: number): Promise<void> {
@@ -224,7 +245,7 @@ class AutoUpdater {
         })
       }
 
-      await sleep(5)
+      await sleep(this.rpcDelay)
     }
 
     // Save all events to database
@@ -232,6 +253,10 @@ class AutoUpdater {
       await this.db.saveTransferEvents(allEvents)
       console.log(`Saved ${allEvents.length} Steer events to database`)
     }
+
+    // Update the latest processed block
+    await this.db.updateLatestBlock('steer', toBlock)
+    console.log(`Updated Steer latest processed block to ${toBlock}`)
   }
 
   async close(): Promise<void> {
@@ -254,7 +279,7 @@ async function main() {
   process.on('SIGTERM', async () => {
     console.log('Received SIGTERM, shutting down...')
     await updater.close()
-    process.exit(0)
+    process.exit(1)
   })
 
   try {

@@ -41,7 +41,7 @@ export class DatabaseService {
       console.log('Connected to database successfully')
       
       // Create table for transfer events
-      const createTableSQL = `
+      const createTransferTableSQL = `
         CREATE TABLE IF NOT EXISTS transfer_events (
           id SERIAL PRIMARY KEY,
           from_address VARCHAR(42) NOT NULL,
@@ -53,9 +53,20 @@ export class DatabaseService {
         )
       `
 
-      console.log('Creating table...')
-      await client.query(createTableSQL)
-      console.log('Table created successfully')
+      // Create table for tracking latest processed blocks
+      const createLatestBlocksTableSQL = `
+        CREATE TABLE IF NOT EXISTS latest_blocks (
+          id SERIAL PRIMARY KEY,
+          token VARCHAR(10) NOT NULL UNIQUE,
+          latest_block BIGINT NOT NULL,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `
+
+      console.log('Creating tables...')
+      await client.query(createTransferTableSQL)
+      await client.query(createLatestBlocksTableSQL)
+      console.log('Tables created successfully')
 
       // Create indexes for better performance
       const createIndexesSQL = [
@@ -120,6 +131,25 @@ export class DatabaseService {
     } catch (error) {
       await client.query('ROLLBACK')
       throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async updateLatestBlock(token: string, block: number): Promise<void> {
+    const client = await this.pool.connect()
+    
+    try {
+      const query = `
+        INSERT INTO latest_blocks (token, latest_block)
+        VALUES ($1, $2)
+        ON CONFLICT (token) 
+        DO UPDATE SET 
+          latest_block = GREATEST(latest_blocks.latest_block, $2),
+          updated_at = CURRENT_TIMESTAMP
+      `
+
+      await client.query(query, [token, block])
     } finally {
       client.release()
     }
@@ -238,14 +268,14 @@ export class DatabaseService {
     
     try {
       const query = `
-        SELECT MAX(block) as latest_block
-        FROM transfer_events 
+        SELECT latest_block
+        FROM latest_blocks 
         WHERE token = $1
       `
 
       const result = await client.query(query, [token])
       
-      if (result.rows.length === 0 || result.rows[0].latest_block === null) {
+      if (result.rows.length === 0) {
         return null
       }
       

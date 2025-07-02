@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "npx tsx app.ts",
     "build": "npx tsc",
-    "ingest": "npx tsx ingest.ts"
+    "ingest": "npx tsx ingest.ts",
+    "update": "npx tsx update.ts"
   },
   "keywords": [],
   "author": "",

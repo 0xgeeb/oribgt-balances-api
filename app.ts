@@ -27,16 +27,28 @@ const client = createPublicClient({
 })
 
 app.get(`/${goldivault}/:block`, async (req: Request, res: Response): Promise<void> => {
+  console.log('yt request received')
   try {
     const block = parseInt(req.params.block)
     
-    if (isNaN(block)) {
+    if (isNaN(block) || block < 3845931) {
       res.status(400).json({ error: "Invalid block number" })
       return
     }
 
-    const balances = await db.getTokenBalances('yt', block)
+    // Check if the requested block is beyond what's been processed
+    const latestProcessedBlock = await db.getLatestBlock('yt')
+    if (latestProcessedBlock !== null && block > latestProcessedBlock) {
+      res.status(400).json({ 
+        error: "Block not yet processed", 
+        requestedBlock: block,
+        latestProcessedBlock: latestProcessedBlock,
+        message: `Requested block ${block} is beyond the latest processed block ${latestProcessedBlock}. Please try a lower block number or wait for the updater to process more blocks.`
+      })
+      return
+    }
 
+    const balances = await db.getTokenBalances('yt', block)
 
     res.json({ holders: balances })
   }
@@ -47,6 +59,7 @@ app.get(`/${goldivault}/:block`, async (req: Request, res: Response): Promise<vo
 })
 
 app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<void> => {
+  console.log('steer request received')
   try {
     const block = parseInt(req.params.block)
     
@@ -55,7 +68,17 @@ app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<v
       return
     }
 
-
+    // Check if the requested block is beyond what's been processed
+    const latestProcessedBlock = await db.getLatestBlock('steer')
+    if (latestProcessedBlock !== null && block > latestProcessedBlock) {
+      res.status(400).json({ 
+        error: "Block not yet processed", 
+        requestedBlock: block,
+        latestProcessedBlock: latestProcessedBlock,
+        message: `Requested block ${block} is beyond the latest processed block ${latestProcessedBlock}. Please try a lower block number or wait for the updater to process more blocks.`
+      })
+      return
+    }
 
     const result = await client.readContract({
       address: steerIsland,
@@ -89,11 +112,38 @@ app.get(`/${steerIsland}/:block`, async (req: Request, res: Response): Promise<v
 })
 
 app.get('/infrared/:block', async (req: Request, res: Response): Promise<void> => {
+  console.log('infrared request received')
   try {
     const block = parseInt(req.params.block)
     
     if (isNaN(block)) {
       res.status(400).json({ error: "Invalid block number" })
+      return
+    }
+
+    // Check if the requested block is beyond what's been processed for both tokens
+    const ytLatestProcessedBlock = await db.getLatestBlock('yt')
+    const steerLatestProcessedBlock = await db.getLatestBlock('steer')
+    
+    if (ytLatestProcessedBlock !== null && block > ytLatestProcessedBlock) {
+      res.status(400).json({ 
+        error: "Block not yet processed for YT", 
+        requestedBlock: block,
+        ytLatestProcessedBlock: ytLatestProcessedBlock,
+        steerLatestProcessedBlock: steerLatestProcessedBlock,
+        message: `Requested block ${block} is beyond the latest processed YT block ${ytLatestProcessedBlock}. Please try a lower block number or wait for the updater to process more blocks.`
+      })
+      return
+    }
+    
+    if (steerLatestProcessedBlock !== null && block > steerLatestProcessedBlock) {
+      res.status(400).json({ 
+        error: "Block not yet processed for Steer", 
+        requestedBlock: block,
+        ytLatestProcessedBlock: ytLatestProcessedBlock,
+        steerLatestProcessedBlock: steerLatestProcessedBlock,
+        message: `Requested block ${block} is beyond the latest processed Steer block ${steerLatestProcessedBlock}. Please try a lower block number or wait for the updater to process more blocks.`
+      })
       return
     }
 

@@ -46,7 +46,7 @@ const goldivault = '0x66090e34c9192Ee9927f44f978246be3e5365D36'
 const yt = '0xB345a602c2e24051a57e2339a98c815a6e45059c'
 const steerDeployBlock = 4053186
 const ytDeployBlock = 3845931
-const step = 30000
+const step = 10000
 
 async function ingestYtEvents(fromBlock: number, toBlock: number) {
   console.log(`Ingesting YT events from block ${fromBlock} to ${toBlock}`)
@@ -117,7 +117,7 @@ async function ingestYtEvents(fromBlock: number, toBlock: number) {
       })
     }
 
-    await sleep(5)
+    await sleep(50)
   }
 
   // Save all events to database
@@ -125,6 +125,10 @@ async function ingestYtEvents(fromBlock: number, toBlock: number) {
     await db.saveTransferEvents(allEvents)
     console.log(`Saved ${allEvents.length} YT events to database`)
   }
+
+  // Update the latest processed block
+  await db.updateLatestBlock('yt', toBlock)
+  console.log(`Updated YT latest processed block to ${toBlock}`)
 
   await db.close()
   console.log(`Completed YT event ingestion for blocks ${fromBlock} to ${toBlock}`)
@@ -172,7 +176,7 @@ async function ingestSteerEvents(fromBlock: number, toBlock: number) {
       })
     }
 
-    await sleep(5)
+    await sleep(50)
   }
 
   // Save all events to database
@@ -180,6 +184,10 @@ async function ingestSteerEvents(fromBlock: number, toBlock: number) {
     await db.saveTransferEvents(allEvents)
     console.log(`Saved ${allEvents.length} Steer events to database`)
   }
+
+  // Update the latest processed block
+  await db.updateLatestBlock('steer', toBlock)
+  console.log(`Updated Steer latest processed block to ${toBlock}`)
 
   await db.close()
   console.log(`Completed Steer event ingestion for blocks ${fromBlock} to ${toBlock}`)
